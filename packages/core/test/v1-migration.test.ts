@@ -62,6 +62,7 @@ const session = (
   time_updated: 2,
   time_idle: null,
   time_viewed: null,
+  idle_outcome: null,
   time_compacting: 3,
   time_archived: null,
   time_suspended: null,

@@ -37,6 +37,8 @@ export const Info = Schema.Struct({
   model: Model.Ref.pipe(optional),
   cost: Money.USD,
   tokens: TokenUsage.Info,
+  /** Outcome of the last completed execution, recorded at `time.idle`. Absent until a run reaches a terminal transition. */
+  outcome: Schema.Literals(["succeeded", "failed", "interrupted"]).pipe(optional),
   time: Schema.Struct({
     created: DateTimeUtcFromMillis,
     updated: DateTimeUtcFromMillis,

@@ -130,8 +130,14 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
     const status = (sessionID: string) => {
       const session = root(sessionID)
       const members = family(session)
+      const unread = members.filter(isUnread)
       return {
-        unread: members.some(isUnread) ? ("activity" as const) : undefined,
+        unread:
+          unread.length === 0
+            ? undefined
+            : unread.some((id) => data.session.get(id)?.outcome === "failed")
+              ? ("error" as const)
+              : ("activity" as const),
         promptPulse: promptPulses()[session] ?? 0,
         attention: members.some(
           (id) => (data.session.permission.list(id)?.length ?? 0) > 0 || (data.session.form.list(id)?.length ?? 0) > 0,
@@ -159,12 +165,25 @@ export const { use: useSessionTabs, provider: SessionTabsProvider } = createSimp
       })
     })
 
+    // Viewed state is server-global, so acknowledgement runs even with tabs disabled: other
+    // clients rely on this client reporting what its user has seen.
+    const acknowledged = new Map<string, number>()
     createEffect(() => {
-      if (!enabled() || !focused()) return
+      if (!focused()) return
       if (route.data.type !== "session" || route.data.sessionID === "dummy") return
-      const unread = family(route.data.sessionID).filter(isUnread)
-      if (unread.length === 0) return
-      void Promise.allSettled(unread.map((id) => client.api.session.view({ sessionID: id })))
+      const pending = family(route.data.sessionID).flatMap((id) => {
+        const idle = data.session.get(id)?.time.idle
+        if (idle === undefined || !isUnread(id) || acknowledged.get(id) === idle) return []
+        return [{ id, idle }]
+      })
+      if (pending.length === 0) return
+      // Record before the request so event-driven re-runs don't re-post the same watermark.
+      for (const entry of pending) acknowledged.set(entry.id, entry.idle)
+      void Promise.all(
+        pending.map((entry) =>
+          client.api.session.view({ sessionID: entry.id }).catch(() => acknowledged.delete(entry.id)),
+        ),
+      )
     })
 
     createEffect(() => {

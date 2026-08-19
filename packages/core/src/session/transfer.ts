@@ -121,6 +121,7 @@ const layer = Layer.effect(
                       time_viewed: input.data.info.time.viewed
                         ? DateTime.toEpochMillis(input.data.info.time.viewed)
                         : null,
+                      idle_outcome: input.data.info.outcome ?? null,
                       time_archived: input.data.info.time.archived
                         ? DateTime.toEpochMillis(input.data.info.time.archived)
                         : null,

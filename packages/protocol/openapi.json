@@ -12185,6 +12185,10 @@
           "tokens": {
             "$ref": "#/components/schemas/TokenUsage.Info"
           },
+          "outcome": {
+            "type": "string",
+            "enum": ["succeeded", "failed", "interrupted"]
+          },
           "time": {
             "type": "object",
             "properties": {
@@ -14397,9 +14401,12 @@
                     "pattern": "^ses"
                   }
                 ]
+              },
+              "idle": {
+                "type": "number"
               }
             },
-            "required": ["sessionID"],
+            "required": ["sessionID", "idle"],
             "additionalProperties": false
           }
         },

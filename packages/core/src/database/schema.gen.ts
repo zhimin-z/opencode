@@ -211,6 +211,7 @@ const schema: Omit<DatabaseMigration.Migration, "id"> = {
           \`time_updated\` integer NOT NULL,
           \`time_idle\` integer,
           \`time_viewed\` integer,
+          \`idle_outcome\` text,
           \`time_compacting\` integer,
           \`time_archived\` integer,
           \`time_suspended\` integer,

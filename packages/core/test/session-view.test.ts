@@ -43,6 +43,7 @@ describe("Session.view", () => {
 
       expect(created.time.idle).toBeUndefined()
       expect(created.time.viewed).toBeUndefined()
+      expect(created.outcome).toBeUndefined()
 
       yield* session.view({ sessionID: created.id })
       expect((yield* session.get(created.id)).time.viewed).toBeUndefined()
@@ -52,6 +53,7 @@ describe("Session.view", () => {
       expect(idle.time.idle).toBeDefined()
       expect(idle.time.viewed).toBeUndefined()
       expect(idle.time.updated).toEqual(created.time.updated)
+      expect(idle.outcome).toBe("succeeded")
 
       yield* session.view({ sessionID: created.id })
       const viewed = yield* session.get(created.id)
@@ -80,12 +82,14 @@ describe("Session.view", () => {
       const unread = yield* session.get(created.id)
       if (!unread.time.idle || !unread.time.viewed) return yield* Effect.die(new Error("Expected attention times"))
       expect(DateTime.toEpochMillis(unread.time.idle)).toBeGreaterThan(DateTime.toEpochMillis(unread.time.viewed))
+      expect(unread.outcome).toBe("failed")
 
       yield* session.view({ sessionID: created.id })
       expect((yield* session.get(created.id)).time.viewed).toEqual(unread.time.idle)
 
       yield* bus.publish(SessionEvent.Execution.Interrupted, { sessionID: created.id, reason: "shutdown" })
       expect((yield* session.get(created.id)).time.idle).toEqual(unread.time.idle)
+      expect((yield* session.get(created.id)).outcome).toBe("failed")
 
       yield* bus.publish(SessionEvent.Execution.Interrupted, { sessionID: created.id, reason: "user" })
       const interrupted = yield* session.get(created.id)
@@ -94,6 +98,7 @@ describe("Session.view", () => {
       expect(DateTime.toEpochMillis(interrupted.time.idle)).toBeGreaterThan(
         DateTime.toEpochMillis(interrupted.time.viewed),
       )
+      expect(interrupted.outcome).toBe("interrupted")
       expect(
         (yield* db
           .select({ type: EventTable.type })
@@ -101,6 +106,35 @@ describe("Session.view", () => {
           .where(eq(EventTable.aggregate_id, created.id))
           .all()).filter((event) => event.type === Bus.versionedType(SessionEvent.Viewed.type, 1)),
       ).toHaveLength(2)
+    }),
+  )
+
+  it.effect("keeps a newer completion unread when the viewed watermark is stale", () =>
+    Effect.gen(function* () {
+      const session = yield* Session.Service
+      const bus = yield* Bus.Service
+      const created = yield* session.create({ location })
+      yield* bus.publish(SessionEvent.Execution.Succeeded, { sessionID: created.id })
+      const observed = (yield* session.get(created.id)).time.idle
+      if (!observed) return yield* Effect.die(new Error("Expected idle time"))
+
+      // A failure commits between the viewer's observation and the viewed event.
+      yield* bus.publish(SessionEvent.Execution.Failed, {
+        sessionID: created.id,
+        error: { type: "unknown", message: "failed" },
+      })
+      yield* bus.publish(SessionEvent.Viewed, { sessionID: created.id, idle: DateTime.toEpochMillis(observed) })
+      const stale = yield* session.get(created.id)
+      if (!stale.time.idle || !stale.time.viewed) return yield* Effect.die(new Error("Expected attention times"))
+      expect(stale.time.viewed).toEqual(observed)
+      expect(DateTime.toEpochMillis(stale.time.idle)).toBeGreaterThan(DateTime.toEpochMillis(stale.time.viewed))
+
+      // A duplicate stale watermark never regresses a newer acknowledgement.
+      yield* session.view({ sessionID: created.id })
+      const acked = yield* session.get(created.id)
+      expect(acked.time.viewed).toEqual(acked.time.idle)
+      yield* bus.publish(SessionEvent.Viewed, { sessionID: created.id, idle: DateTime.toEpochMillis(observed) })
+      expect((yield* session.get(created.id)).time.viewed).toEqual(acked.time.viewed)
     }),
   )
 
@@ -165,7 +199,9 @@ describe("Session.view", () => {
           .pipe(Effect.orDie)
         yield* Effect.forEach(serialized, (event) => targetBus.replay(event), { discard: true })
 
-        expect((yield* store.get(created.id))?.time).toEqual(expected.time)
+        const replayed = yield* store.get(created.id)
+        expect(replayed?.time).toEqual(expected.time)
+        expect(replayed?.outcome).toBe("failed")
         expect(expected.time.updated).toEqual(created.time.updated)
         expect(expectedIdle).toBeGreaterThan(expectedViewed)
       }).pipe(Effect.provide(Layer.fresh(targetLayer)))

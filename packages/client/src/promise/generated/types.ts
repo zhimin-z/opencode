@@ -486,7 +486,7 @@ export type SessionViewed = {
   type: "session.viewed"
   durable: { aggregateID: string; seq: number; version: 1 }
   location?: LocationRef
-  data: { sessionID: string }
+  data: { sessionID: string; idle: number }
 }
 
 export type SessionDeleted = {
@@ -1520,6 +1520,7 @@ export type SessionInfo = {
   model?: ModelRef
   cost: MoneyUSD
   tokens: TokenUsageInfo
+  outcome?: "succeeded" | "failed" | "interrupted"
   time: { created: number; updated: number; idle?: number; viewed?: number; archived?: number }
   title?: string
   location: LocationRef
@@ -2488,6 +2489,7 @@ export type SessionImportInput = {
         readonly reasoning: number
         readonly cache: { readonly read: number; readonly write: number }
       }
+      readonly outcome?: "succeeded" | "failed" | "interrupted"
       readonly time: {
         readonly created: number
         readonly updated: number
@@ -2761,6 +2763,7 @@ export type SessionImportInput = {
         readonly reasoning: number
         readonly cache: { readonly read: number; readonly write: number }
       }
+      readonly outcome?: "succeeded" | "failed" | "interrupted"
       readonly time: {
         readonly created: number
         readonly updated: number
@@ -3034,6 +3037,7 @@ export type SessionImportInput = {
         readonly reasoning: number
         readonly cache: { readonly read: number; readonly write: number }
       }
+      readonly outcome?: "succeeded" | "failed" | "interrupted"
       readonly time: {
         readonly created: number
         readonly updated: number

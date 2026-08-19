@@ -58,6 +58,7 @@ export const SessionTable = sqliteTable(
     ...Timestamps,
     time_idle: integer(),
     time_viewed: integer(),
+    idle_outcome: text().$type<NonNullable<Session.Info["outcome"]>>(),
     time_compacting: integer(),
     time_archived: integer(),
     /** The execution claim timestamp (historical column name; see SessionStore.claim). */

@@ -13,7 +13,7 @@ import { tmpdir } from "./fixture/tmpdir"
 import type { SqlClient } from "effect/unstable/sql/SqlClient"
 import legacyCredentialsMigration from "@opencode-ai/core/database/migration/20260805200742_import_legacy_credentials"
 import worktreeMigration from "@opencode-ai/core/database/migration/20260812213948_worktree"
-import sessionViewedStateMigration from "@opencode-ai/core/database/migration/20260815182818_session_viewed_state"
+import sessionViewedStateMigration from "@opencode-ai/core/database/migration/20260819222447_session_viewed_state"
 import { Global } from "@opencode-ai/util/global"
 
 const run = <A, E>(
@@ -84,11 +84,12 @@ describe("DatabaseMigration", () => {
         yield* DatabaseMigration.applyOnly(db, [sessionViewedStateMigration])
         yield* DatabaseMigration.applyOnly(db, [sessionViewedStateMigration])
 
-        expect(yield* db.get(sql`SELECT id, title, time_idle, time_viewed FROM session_v2`)).toEqual({
+        expect(yield* db.get(sql`SELECT id, title, time_idle, time_viewed, idle_outcome FROM session_v2`)).toEqual({
           id: "ses_existing",
           title: "Existing",
           time_idle: null,
           time_viewed: null,
+          idle_outcome: null,
         })
         expect(yield* db.get(sql`SELECT count(*) AS count FROM migration`)).toEqual({ count: 1 })
       }),

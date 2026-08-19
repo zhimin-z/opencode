@@ -37,7 +37,9 @@ async function renderSessionTabs(
     sessionDirectories?: Record<string, string>
     sessionParents?: Record<string, string>
     sessionTimes?: Record<string, { idle?: number; viewed?: number }>
+    sessionOutcomes?: Record<string, "succeeded" | "failed" | "interrupted">
     newLocation?: "launch" | "inherit"
+    tabsEnabled?: boolean
   },
 ) {
   const temporary = options?.state ? undefined : await tmpdir()
@@ -48,8 +50,13 @@ async function renderSessionTabs(
     await Bun.write(
       file,
       JSON.stringify({
-        global: { tabs: [], unread: {} },
-        cwd: { [directory]: { tabs: options.persisted.map((sessionID) => ({ sessionID })), unread: {} } },
+        global: { tabs: [], unread: { ses_legacy: "error" } },
+        cwd: {
+          [directory]: {
+            tabs: options.persisted.map((sessionID) => ({ sessionID })),
+            unread: { ses_legacy: "activity" },
+          },
+        },
       }),
     )
   }
@@ -98,6 +105,7 @@ async function renderSessionTabs(
         location: { directory: options?.sessionDirectories?.[sessionID] ?? directory },
         cost: 0,
         tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        outcome: options?.sessionOutcomes?.[sessionID],
         time: { created: 0, updated: 0, ...sessionTimes[sessionID] },
       },
     })
@@ -123,7 +131,7 @@ async function renderSessionTabs(
         <StorageProvider>
           <ConfigProvider
             config={createTuiResolvedConfig({
-              tabs: { enabled: true },
+              tabs: { enabled: options?.tabsEnabled ?? true },
               session: { new_location: options?.newLocation ?? "launch" },
             })}
           >
@@ -280,9 +288,54 @@ test("derives unread state from server session times", async () => {
   }
 })
 
+test("marks unread failed sessions with error styling", async () => {
+  const setup = await renderSessionTabs("first", {
+    home: true,
+    persisted: ["first", "second"],
+    sessionTimes: { first: { idle: 2 }, second: { idle: 2 } },
+    sessionOutcomes: { second: "failed" },
+  })
+  try {
+    await wait(() => setup.tabs.status("second").unread === "error")
+    expect(setup.tabs.status("first").unread).toBe("activity")
+  } finally {
+    await setup.destroy()
+  }
+})
+
+test("acknowledges viewed sessions even when tabs are disabled", async () => {
+  const setup = await renderSessionTabs("first", {
+    tabsEnabled: false,
+    sessionTimes: { first: { idle: 2 } },
+  })
+  try {
+    await setup.data.session.sync("first")
+    await wait(() => setup.views.includes("first"))
+    expect(setup.tabs.tabs()).toEqual([])
+  } finally {
+    await setup.destroy()
+  }
+})
+
+test("purges legacy persisted unread records", async () => {
+  const setup = await renderSessionTabs("first", { persisted: ["first"] })
+  try {
+    const file = path.join(setup.state, "test", "tui", "tabs.json")
+    // Normalize rewrites the active scope; the legacy record must not survive it.
+    await wait(async () => {
+      const stored = await Bun.file(file).json()
+      return !("unread" in stored.cwd[directory])
+    })
+  } finally {
+    await setup.destroy()
+  }
+})
+
 test("refreshes server session times after terminal events", async () => {
   const setup = await renderSessionTabs("first", { home: true, persisted: ["first"] })
   try {
+    // Terminal events refresh only already-loaded sessions, so ensure the initial sync landed.
+    await wait(() => setup.data.session.get("first") !== undefined)
     setup.setSessionTime("first", { idle: 2 })
     setup.emit({
       id: "evt_done_first",
@@ -317,9 +370,10 @@ test("views a selected unread session only while focused", async () => {
       created: 3,
       type: "session.viewed",
       durable: { aggregateID: "first", seq: 2, version: 1 },
-      data: { sessionID: "first" },
+      data: { sessionID: "first", idle: 2 },
     })
     await wait(() => setup.tabs.status("first").unread === undefined)
+    expect(setup.views).toEqual(["first"])
   } finally {
     await setup.destroy()
   }
